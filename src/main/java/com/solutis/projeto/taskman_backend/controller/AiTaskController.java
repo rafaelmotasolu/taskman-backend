@@ -4,6 +4,7 @@ import com.solutis.projeto.taskman_backend.domain.entity.ChatMessage;
 import com.solutis.projeto.taskman_backend.domain.entity.User;
 import com.solutis.projeto.taskman_backend.dto.ai.ChatPromptRequestDTO;
 import com.solutis.projeto.taskman_backend.dto.ai.ChatPromptResponseDTO;
+import com.solutis.projeto.taskman_backend.dto.ai.SubtaskItemDTO;
 import com.solutis.projeto.taskman_backend.dto.ai.TaskAnalysisResponseDTO;
 import com.solutis.projeto.taskman_backend.dto.ai.TaskDecompositionResponseDTO;
 import com.solutis.projeto.taskman_backend.dto.ai.TaskImproveRequestDTO;
@@ -71,6 +72,17 @@ public class AiTaskController {
             @AuthenticationPrincipal User currentUser
     ) {
         List<TaskResponseDTO> createdSubtasks = aiService.applySubtasks(id, currentUser);
+        return ResponseEntity.ok(createdSubtasks);
+    }
+
+    @PostMapping("/tasks/{id}/decompose/apply")
+    @Operation(summary = "Persistir no banco as subtarefas sugeridas pela IA que foram aprovadas pelo usuário")
+    public ResponseEntity<List<TaskResponseDTO>> applyApprovedSubtasks(
+            @PathVariable UUID id,
+            @RequestBody List<SubtaskItemDTO> approvedSubtasks,
+            @AuthenticationPrincipal User currentUser
+    ) {
+        List<TaskResponseDTO> createdSubtasks = aiService.applyApprovedSubtasks(id, approvedSubtasks, currentUser);
         return ResponseEntity.ok(createdSubtasks);
     }
 

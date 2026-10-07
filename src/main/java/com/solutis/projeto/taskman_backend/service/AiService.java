@@ -3,6 +3,7 @@ package com.solutis.projeto.taskman_backend.service;
 import com.solutis.projeto.taskman_backend.domain.entity.ChatMessage;
 import com.solutis.projeto.taskman_backend.domain.entity.User;
 import com.solutis.projeto.taskman_backend.dto.ai.ChatPromptResponseDTO;
+import com.solutis.projeto.taskman_backend.dto.ai.SubtaskItemDTO;
 import com.solutis.projeto.taskman_backend.dto.ai.TaskAnalysisResponseDTO;
 import com.solutis.projeto.taskman_backend.dto.ai.TaskDecompositionResponseDTO;
 import com.solutis.projeto.taskman_backend.dto.ai.TaskImprovementResponseDTO;
@@ -20,6 +21,8 @@ public interface AiService {
     TaskDecompositionResponseDTO decomposeTask(UUID taskId, User user);
 
     List<TaskResponseDTO> applySubtasks(UUID taskId, User user);
+
+    List<TaskResponseDTO> applyApprovedSubtasks(UUID taskId, List<SubtaskItemDTO> approvedSubtasks, User user);
 
     ChatPromptResponseDTO chat(UUID sessionId, String userMessage, User user);
 
