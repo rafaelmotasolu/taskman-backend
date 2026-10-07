@@ -151,7 +151,7 @@ public class DataInitializer implements CommandLineRunner {
                     .build());
 
             taskRepository.save(Task.builder()
-                    .title("Apresentação de demonstração do AI Task Manager")
+                    .title("Apresentação de demonstração do Taskman")
                     .description("Demonstrar login rápido, métricas de dashboard e recursos de IA para a equipe")
                     .status(TaskStatus.IN_PROGRESS)
                     .priority(TaskPriority.HIGH)
