@@ -1,8 +1,10 @@
 package com.solutis.projeto.taskman_backend.repository;
 
 import com.solutis.projeto.taskman_backend.domain.entity.Task;
+import com.solutis.projeto.taskman_backend.domain.enums.TaskPriority;
 import com.solutis.projeto.taskman_backend.domain.enums.TaskStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -13,7 +15,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface TaskRepository extends JpaRepository<Task, UUID> {
+public interface TaskRepository extends JpaRepository<Task, UUID>, JpaSpecificationExecutor<Task> {
 
     List<Task> findByUserId(UUID userId);
 
@@ -33,5 +35,18 @@ public interface TaskRepository extends JpaRepository<Task, UUID> {
     );
 
     List<Task> findByUserIdAndParentTaskId(UUID userId, UUID parentId);
-}
 
+    // Métricas do Dashboard
+    long countByUserId(UUID userId);
+
+    long countByUserIdAndStatus(UUID userId, TaskStatus status);
+
+    long countByUserIdAndPriority(UUID userId, TaskPriority priority);
+
+    @Query("SELECT COUNT(t) FROM Task t WHERE t.user.id = :userId AND t.dueDate < :now AND t.status != :doneStatus")
+    long countOverdueTasks(
+            @Param("userId") UUID userId,
+            @Param("now") LocalDateTime now,
+            @Param("doneStatus") TaskStatus doneStatus
+    );
+}
