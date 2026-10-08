@@ -18,7 +18,11 @@ public record TaskUpdateDTO(
 
         TaskPriority priority,
 
-        LocalDateTime dueDate
-) {
-}
+        LocalDateTime dueDate,
 
+        Boolean completeSubtasks
+) {
+    public TaskUpdateDTO(String title, String description, TaskStatus status, TaskPriority priority, LocalDateTime dueDate) {
+        this(title, description, status, priority, dueDate, false);
+    }
+}

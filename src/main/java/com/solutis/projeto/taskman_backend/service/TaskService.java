@@ -17,8 +17,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -114,6 +116,7 @@ public class TaskService {
         task.setTitle(dto.title());
         task.setDescription(dto.description());
         if (dto.status() != null) {
+            validateAndHandleSubtaskCompletion(task, dto.status(), dto.completeSubtasks());
             task.setStatus(dto.status());
         }
         if (dto.priority() != null) {
@@ -130,9 +133,30 @@ public class TaskService {
         Task task = taskRepository.findByIdAndUserId(id, currentUser.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Tarefa não encontrada com o ID: " + id));
 
+        validateAndHandleSubtaskCompletion(task, dto.status(), dto.completeSubtasks());
         task.setStatus(dto.status());
         Task updated = taskRepository.save(task);
         return toResponseDTO(updated);
+    }
+
+    private void validateAndHandleSubtaskCompletion(Task task, TaskStatus newStatus, Boolean completeSubtasks) {
+        if (newStatus == TaskStatus.DONE && task.getSubtasks() != null && !task.getSubtasks().isEmpty()) {
+            boolean hasPendingSubtasks = task.getSubtasks().stream()
+                    .anyMatch(s -> s.getStatus() != TaskStatus.DONE);
+
+            if (hasPendingSubtasks) {
+                if (Boolean.TRUE.equals(completeSubtasks)) {
+                    for (Task subtask : task.getSubtasks()) {
+                        subtask.setStatus(TaskStatus.DONE);
+                    }
+                } else {
+                    throw new ResponseStatusException(
+                            HttpStatus.CONFLICT,
+                            "Não é possível concluir a tarefa pois existem subtarefas pendentes."
+                    );
+                }
+            }
+        }
     }
 
     @Transactional

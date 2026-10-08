@@ -139,8 +139,8 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.title").value("Projeto Backend Taskman - Atualizado"))
                 .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
 
-        // 5. Patch status to DONE
-        TaskStatusUpdateDTO statusDTO = new TaskStatusUpdateDTO(TaskStatus.DONE);
+        // 5. Patch status to DONE (with completeSubtasks = true)
+        TaskStatusUpdateDTO statusDTO = new TaskStatusUpdateDTO(TaskStatus.DONE, true);
         mockMvc.perform(patch("/tasks/" + rootId + "/status")
                         .header("Authorization", "Bearer " + tokenA)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -151,18 +151,19 @@ class TaskControllerTest {
         // 6. List tasks
         mockMvc.perform(get("/tasks")
                         .header("Authorization", "Bearer " + tokenA)
-                        .param("status", "DONE"))
+                        .param("status", "DONE")
+                        .param("rootOnly", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.content[0].title").value("Projeto Backend Taskman - Atualizado"));
 
-        // 7. Get dashboard metrics
+        // 7. Get dashboard metrics (both root and subtask are DONE)
         mockMvc.perform(get("/tasks/dashboard")
                         .header("Authorization", "Bearer " + tokenA))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalTasks").value(2))
-                .andExpect(jsonPath("$.doneTasks").value(1))
-                .andExpect(jsonPath("$.todoTasks").value(1));
+                .andExpect(jsonPath("$.doneTasks").value(2))
+                .andExpect(jsonPath("$.todoTasks").value(0));
 
         // 8. Delete root task (cascades to subtasks)
         mockMvc.perform(delete("/tasks/" + rootId)
@@ -230,6 +231,92 @@ class TaskControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fields.title").isNotEmpty())
                 .andExpect(jsonPath("$.fields.dueDate").isNotEmpty());
+    }
+
+    @Test
+    @DisplayName("Should block task completion when subtasks are pending and allow when confirmed or all done")
+    void shouldBlockCompletionWhenSubtasksPendingAndAllowWhenConfirmed() throws Exception {
+        // 1. Create root task
+        TaskCreateDTO createRoot = new TaskCreateDTO(
+                "Tarefa Principal com Subtarefas",
+                "Descrição principal",
+                TaskPriority.HIGH,
+                LocalDateTime.now().plusDays(5)
+        );
+
+        MvcResult rootResult = mockMvc.perform(post("/tasks")
+                        .header("Authorization", "Bearer " + tokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createRoot)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String rootId = objectMapper.readTree(rootResult.getResponse().getContentAsString()).get("id").asText();
+
+        // 2. Create subtask
+        TaskCreateDTO createSub = new TaskCreateDTO(
+                "Subtarefa 1",
+                "Descrição etapa 1",
+                TaskPriority.MEDIUM,
+                LocalDateTime.now().plusDays(3)
+        );
+
+        MvcResult subResult = mockMvc.perform(post("/tasks/" + rootId + "/subtasks")
+                        .header("Authorization", "Bearer " + tokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createSub)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String subId = objectMapper.readTree(subResult.getResponse().getContentAsString()).get("id").asText();
+
+        // 3. Try to complete parent task without completing subtask (should be blocked with 409 Conflict)
+        TaskStatusUpdateDTO failDTO = new TaskStatusUpdateDTO(TaskStatus.DONE, false);
+        mockMvc.perform(patch("/tasks/" + rootId + "/status")
+                        .header("Authorization", "Bearer " + tokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(failDTO)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("Não é possível concluir a tarefa pois existem subtarefas pendentes."));
+
+        // 4. Complete subtask first
+        TaskStatusUpdateDTO subDoneDTO = new TaskStatusUpdateDTO(TaskStatus.DONE);
+        mockMvc.perform(patch("/tasks/" + subId + "/status")
+                        .header("Authorization", "Bearer " + tokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(subDoneDTO)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DONE"));
+
+        // 5. Now all subtasks are DONE -> parent should complete directly without error
+        mockMvc.perform(patch("/tasks/" + rootId + "/status")
+                        .header("Authorization", "Bearer " + tokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(failDTO)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DONE"));
+
+        // 6. Test with another task: completeSubtasks = true should complete both parent and subtasks
+        MvcResult root2Result = mockMvc.perform(post("/tasks")
+                        .header("Authorization", "Bearer " + tokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createRoot)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String root2Id = objectMapper.readTree(root2Result.getResponse().getContentAsString()).get("id").asText();
+
+        mockMvc.perform(post("/tasks/" + root2Id + "/subtasks")
+                        .header("Authorization", "Bearer " + tokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createSub)))
+                .andExpect(status().isCreated());
+
+        TaskStatusUpdateDTO cascadeDTO = new TaskStatusUpdateDTO(TaskStatus.DONE, true);
+        mockMvc.perform(patch("/tasks/" + root2Id + "/status")
+                        .header("Authorization", "Bearer " + tokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(cascadeDTO)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DONE"))
+                .andExpect(jsonPath("$.subtasks[0].status").value("DONE"));
     }
 }
 

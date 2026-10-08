@@ -5,7 +5,11 @@ import jakarta.validation.constraints.NotNull;
 
 public record TaskStatusUpdateDTO(
         @NotNull(message = "O status da tarefa é obrigatório")
-        TaskStatus status
-) {
-}
+        TaskStatus status,
 
+        Boolean completeSubtasks
+) {
+    public TaskStatusUpdateDTO(TaskStatus status) {
+        this(status, false);
+    }
+}
