@@ -13,6 +13,7 @@ import com.solutis.projeto.taskman_backend.dto.ai.SubtaskItemDTO;
 import com.solutis.projeto.taskman_backend.dto.ai.TaskAnalysisResponseDTO;
 import com.solutis.projeto.taskman_backend.dto.ai.TaskDecompositionResponseDTO;
 import com.solutis.projeto.taskman_backend.dto.ai.TaskImprovementResponseDTO;
+import com.solutis.projeto.taskman_backend.dto.task.TaskCreateDTO;
 import com.solutis.projeto.taskman_backend.dto.task.TaskResponseDTO;
 import com.solutis.projeto.taskman_backend.exception.ResourceNotFoundException;
 import com.solutis.projeto.taskman_backend.repository.ChatMessageRepository;
@@ -37,10 +38,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
 public class SpringAiServiceImpl implements AiService {
+
+    private static final Pattern CREATE_TASKS_PATTERN = Pattern.compile(
+            "```json:create_tasks\\s*([\\[\\{].*?[\\]\\}])\\s*```",
+            Pattern.DOTALL | Pattern.CASE_INSENSITIVE
+    );
+
+    private static final Pattern FALLBACK_JSON_PATTERN = Pattern.compile(
+            "```json\\s*([\\[\\{].*?[\\]\\}])\\s*```",
+            Pattern.DOTALL | Pattern.CASE_INSENSITIVE
+    );
 
     @Value("${spring.ai.ollama.base-url:http://localhost:11434}")
     private String ollamaBaseUrl;
@@ -227,15 +240,30 @@ public class SpringAiServiceImpl implements AiService {
 
         String systemInstructions = String.format("""
                 Você é o assistente inteligente oficial do Taskman.
-                Seu objetivo é ajudar o usuário a planejar, priorizar e acompanhar suas tarefas.
-                
+                Seu objetivo é ajudar o usuário a planejar, priorizar, criar e acompanhar suas tarefas.
+
                 DADOS REAIS DAS TAREFAS DO USUÁRIO NO BANCO:
                 %s
-                
+
                 REGRAS:
-                1. NUNCA invente tarefas que não estão na lista acima.
+                1. NUNCA invente tarefas que não estão na lista acima ao relatar o status atual do usuário.
                 2. Quando o usuário perguntar sobre suas tarefas, prazos ou pendências, use os dados acima como verdade absoluta.
-                3. Seja prestativo, claro, motivador e responda sempre em português.
+                3. CRIAÇÃO DINÂMICA DE TAREFAS:
+                   Se o usuário solicitar explicitamente para CRIAR, ADICIONAR, AGENDAR ou CADASTRAR uma ou mais novas tarefas (ex.: "Crie uma tarefa...", "Adicione a tarefa...", "Cadastre..."):
+                   - Confirme amigavelmente e com clareza na sua mensagem que a tarefa foi agendada/criada.
+                   - No FINAL da sua mensagem, inclua SEMPRE o bloco com as tarefas a serem criadas no formato exato:
+                     ```json:create_tasks
+                     [
+                       {
+                         "title": "Título claro e objetivo da tarefa",
+                         "description": "Descrição detalhada do que precisa ser feito",
+                         "priority": "LOW" ou "MEDIUM" ou "HIGH",
+                         "dueDate": "YYYY-MM-DDTHH:mm:ss" ou null
+                       }
+                     ]
+                     ```
+                4. Se o usuário NÃO solicitou a criação de tarefas, responda naturalmente SEM o bloco ```json:create_tasks.
+                5. Seja prestativo, claro, motivador e responda sempre em português.
                 """, tasksContext);
 
         // 3. Monta mensagens de histórico para o Ollama
@@ -253,19 +281,49 @@ public class SpringAiServiceImpl implements AiService {
             messagesPayload.add(Map.of("role", roleStr, "content", msg.getContent()));
         }
 
+        List<TaskResponseDTO> createdTasks = new ArrayList<>();
         String assistantResponse;
         try {
             assistantResponse = callOllamaWithMessages(messagesPayload, false);
-            if (assistantResponse == null || assistantResponse.isBlank()) {
-                assistantResponse = "Entendi sua mensagem. Como posso ajudar com suas tarefas hoje?";
+            if (assistantResponse != null && !assistantResponse.isBlank()) {
+                createdTasks.addAll(processTasksFromResponse(assistantResponse, user));
+            }
+
+            // Se o usuário solicitou criação mas o modelo não retornou o bloco estruturado
+            if (createdTasks.isEmpty() && isTaskCreationIntent(userMessage)) {
+                TaskResponseDTO fallbackTask = createFallbackTask(userMessage, user);
+                if (fallbackTask != null) {
+                    createdTasks.add(fallbackTask);
+                }
+            }
+
+            assistantResponse = cleanAssistantResponse(assistantResponse);
+
+            if (assistantResponse.isBlank()) {
+                if (!createdTasks.isEmpty()) {
+                    assistantResponse = String.format("Tarefa **%s** criada com sucesso no seu painel!", createdTasks.get(0).title());
+                } else {
+                    assistantResponse = "Entendi sua mensagem. Como posso ajudar com suas tarefas hoje?";
+                }
             }
         } catch (Exception e) {
             log.warn("Falha no chat com Ollama: {}. Usando resposta assistida.", e.getMessage());
-            assistantResponse = String.format("Olá, %s! No momento você tem %d tarefas no seu painel (%d a fazer e %d em andamento). O que gostaria de priorizar agora?",
-                    user.getName(), totalTasks, todoCount, inProgressCount);
+            if (isTaskCreationIntent(userMessage)) {
+                TaskResponseDTO fallbackTask = createFallbackTask(userMessage, user);
+                if (fallbackTask != null) {
+                    createdTasks.add(fallbackTask);
+                    assistantResponse = String.format("Com certeza! Criei a tarefa **\"%s\"** (Prioridade: %s) para você com sucesso. Ela já está disponível no seu painel.",
+                            fallbackTask.title(), fallbackTask.priority());
+                } else {
+                    assistantResponse = "Recebi sua solicitação para criar uma tarefa. Por favor, forneça o título para que eu possa cadastrá-la.";
+                }
+            } else {
+                assistantResponse = String.format("Olá, %s! No momento você tem %d tarefas no seu painel (%d a fazer e %d em andamento). O que gostaria de priorizar agora?",
+                        user.getName(), totalTasks, todoCount, inProgressCount);
+            }
         }
 
-        // 4. Salva resposta do assistente
+        // 4. Salva resposta do assistente (sem o bloco JSON bruto)
         chatMessageRepository.save(ChatMessage.builder()
                 .sessionId(sessionKey)
                 .role(MessageRole.ASSISTANT)
@@ -273,7 +331,7 @@ public class SpringAiServiceImpl implements AiService {
                 .user(user)
                 .build());
 
-        return new ChatPromptResponseDTO(sessionId, assistantResponse, LocalDateTime.now());
+        return new ChatPromptResponseDTO(sessionId, assistantResponse, LocalDateTime.now(), createdTasks);
     }
 
     @Override
@@ -442,5 +500,179 @@ public class SpringAiServiceImpl implements AiService {
                 new SubtaskItemDTO("Validação e Conclusão", "Testes, revisão e encerramento de " + task.getTitle())
         );
         return new TaskDecompositionResponseDTO(subtasks);
+    }
+
+    private List<TaskResponseDTO> processTasksFromResponse(String rawResponse, User user) {
+        List<TaskResponseDTO> createdTasks = new ArrayList<>();
+        if (rawResponse == null || rawResponse.isBlank()) {
+            return createdTasks;
+        }
+
+        Matcher matcher = CREATE_TASKS_PATTERN.matcher(rawResponse);
+        String jsonStr = null;
+        if (matcher.find()) {
+            jsonStr = matcher.group(1);
+        } else {
+            Matcher fallbackMatcher = FALLBACK_JSON_PATTERN.matcher(rawResponse);
+            if (fallbackMatcher.find()) {
+                String candidate = fallbackMatcher.group(1);
+                if (candidate.contains("\"title\"") || candidate.contains("\"titulo\"")) {
+                    jsonStr = candidate;
+                }
+            }
+        }
+
+        if (jsonStr != null) {
+            try {
+                JsonNode root = objectMapper.readTree(jsonStr.trim());
+                if (root.isArray()) {
+                    for (JsonNode node : root) {
+                        TaskResponseDTO created = createTaskFromNode(node, user);
+                        if (created != null) {
+                            createdTasks.add(created);
+                        }
+                    }
+                } else if (root.isObject()) {
+                    TaskResponseDTO created = createTaskFromNode(root, user);
+                    if (created != null) {
+                        createdTasks.add(created);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Erro ao fazer parse do bloco de criação de tarefas: {}", e.getMessage());
+            }
+        }
+
+        return createdTasks;
+    }
+
+    private TaskResponseDTO createTaskFromNode(JsonNode node, User user) {
+        String title = node.path("title").asText(node.path("titulo").asText("")).trim();
+        if (title.isEmpty()) {
+            return null;
+        }
+        String description = node.path("description").asText(node.path("descricao").asText(""));
+        String priorityStr = node.path("priority").asText(node.path("prioridade").asText("MEDIUM")).toUpperCase();
+        TaskPriority priority = TaskPriority.MEDIUM;
+        try {
+            if ("ALTA".equals(priorityStr) || "HIGH".equals(priorityStr)) {
+                priority = TaskPriority.HIGH;
+            } else if ("BAIXA".equals(priorityStr) || "LOW".equals(priorityStr)) {
+                priority = TaskPriority.LOW;
+            } else {
+                priority = TaskPriority.valueOf(priorityStr);
+            }
+        } catch (Exception ignored) {
+        }
+
+        LocalDateTime dueDate = null;
+        String dueDateStr = node.path("dueDate").asText(node.path("dataLimite").asText(""));
+        if (!dueDateStr.isBlank()) {
+            try {
+                String cleanDateStr = dueDateStr.replace("Z", "");
+                if (cleanDateStr.length() == 10) {
+                    cleanDateStr += "T18:00:00";
+                }
+                dueDate = LocalDateTime.parse(cleanDateStr);
+                if (dueDate.isBefore(LocalDateTime.now())) {
+                    dueDate = LocalDateTime.now().plusDays(1).withHour(18).withMinute(0).withSecond(0).withNano(0);
+                }
+            } catch (Exception e) {
+                log.debug("Data limite inválida no JSON da IA: {}", dueDateStr);
+            }
+        }
+
+        TaskCreateDTO createDTO = new TaskCreateDTO(title, description, priority, dueDate);
+        return taskService.createTask(createDTO, user);
+    }
+
+    private String cleanAssistantResponse(String response) {
+        if (response == null) return "";
+        String cleaned = CREATE_TASKS_PATTERN.matcher(response).replaceAll("");
+        Matcher fallbackMatcher = FALLBACK_JSON_PATTERN.matcher(cleaned);
+        if (fallbackMatcher.find()) {
+            String candidate = fallbackMatcher.group(1);
+            if (candidate.contains("\"title\"") || candidate.contains("\"titulo\"")) {
+                cleaned = fallbackMatcher.replaceAll("");
+            }
+        }
+        return cleaned.trim();
+    }
+
+    private boolean isTaskCreationIntent(String message) {
+        if (message == null) return false;
+        String lower = message.toLowerCase();
+        return lower.contains("crie uma tarefa")
+                || lower.contains("crie a tarefa")
+                || lower.contains("criar uma tarefa")
+                || lower.contains("criar a tarefa")
+                || lower.contains("cria uma tarefa")
+                || lower.contains("cria a tarefa")
+                || lower.contains("adicione a tarefa")
+                || lower.contains("adicione uma tarefa")
+                || lower.contains("adicionar tarefa")
+                || lower.contains("adicionar uma tarefa")
+                || lower.contains("nova tarefa")
+                || lower.contains("cadastre uma tarefa")
+                || lower.contains("cadastre a tarefa")
+                || lower.contains("cadastrar tarefa")
+                || lower.contains("agendar tarefa")
+                || lower.contains("agenda uma tarefa");
+    }
+
+    private TaskResponseDTO createFallbackTask(String userMessage, User user) {
+        Pattern quotePattern = Pattern.compile("['\"]([^'\"]+)['\"]");
+        Matcher quoteMatcher = quotePattern.matcher(userMessage);
+        String title;
+        if (quoteMatcher.find()) {
+            title = quoteMatcher.group(1).trim();
+        } else {
+            Pattern keywordPattern = Pattern.compile(
+                    "(?:crie|criar|adicione|adicionar|cadastre|cadastrar|cria|nova\\s+tarefa[:]?)\\s+(?:uma\\s+tarefa|a\\s+tarefa|tarefa)?\\s*(?:de|para|chamada|[:])?\\s*([^,.!?\\n]+)",
+                    Pattern.CASE_INSENSITIVE
+            );
+            Matcher km = keywordPattern.matcher(userMessage);
+            if (km.find() && !km.group(1).isBlank()) {
+                title = km.group(1).trim();
+                title = title.replaceAll("(?i)\\s+(com prioridade|prioridade)\\s+(alta|média|media|baixa|urgente)", "");
+                title = title.replaceAll("(?i)\\s+(para|até)\\s+(amanhã|amanha|hoje|semana que vem|próxima semana)", "");
+                title = title.trim();
+            } else {
+                title = "Nova Tarefa (" + LocalDateTime.now().toLocalDate() + ")";
+            }
+        }
+
+        if (title.isBlank()) {
+            title = "Nova Tarefa (" + LocalDateTime.now().toLocalDate() + ")";
+        }
+
+        if (title.length() > 1) {
+            title = Character.toUpperCase(title.charAt(0)) + title.substring(1);
+        }
+
+        if (title.length() > 150) {
+            title = title.substring(0, 150).trim();
+        }
+
+        String lower = userMessage.toLowerCase();
+        TaskPriority priority = TaskPriority.MEDIUM;
+        if (lower.contains("alta") || lower.contains("urgente") || lower.contains("crítica")) {
+            priority = TaskPriority.HIGH;
+        } else if (lower.contains("baixa")) {
+            priority = TaskPriority.LOW;
+        }
+
+        LocalDateTime dueDate = null;
+        if (lower.contains("amanhã") || lower.contains("amanha")) {
+            dueDate = LocalDateTime.now().plusDays(1).withHour(18).withMinute(0).withSecond(0).withNano(0);
+        } else if (lower.contains("hoje")) {
+            dueDate = LocalDateTime.now().withHour(23).withMinute(59).withSecond(0).withNano(0);
+        } else if (lower.contains("semana que vem") || lower.contains("próxima semana")) {
+            dueDate = LocalDateTime.now().plusWeeks(1).withHour(18).withMinute(0).withSecond(0).withNano(0);
+        }
+
+        String description = "Tarefa criada automaticamente via chat com assistente virtual.";
+        TaskCreateDTO createDTO = new TaskCreateDTO(title, description, priority, dueDate);
+        return taskService.createTask(createDTO, user);
     }
 }

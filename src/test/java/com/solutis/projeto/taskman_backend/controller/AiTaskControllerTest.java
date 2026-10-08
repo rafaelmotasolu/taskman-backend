@@ -162,6 +162,33 @@ class AiTaskControllerTest {
     }
 
     @Test
+    @DisplayName("Should dynamically create task from chat when requested by user")
+    void shouldCreateTaskDynamicallyFromChat() throws Exception {
+        UUID sessionId = UUID.randomUUID();
+        ChatPromptRequestDTO prompt = new ChatPromptRequestDTO(
+                sessionId,
+                "Crie uma tarefa para preparar a apresentação da diretoria amanhã com prioridade alta"
+        );
+
+        mockMvc.perform(post("/ai/chat")
+                        .header("Authorization", "Bearer " + tokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(prompt)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sessionId").value(sessionId.toString()))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.createdTasks").isArray())
+                .andExpect(jsonPath("$.createdTasks.length()").value(1))
+                .andExpect(jsonPath("$.createdTasks[0].priority").value("HIGH"));
+
+        // Verify task exists in repository for userA
+        var tasks = taskRepository.findByUserIdAndParentTaskIsNull(userA.getId());
+        boolean taskExists = tasks.stream()
+                .anyMatch(t -> t.getTitle().toLowerCase().contains("apresentação") || t.getPriority() == TaskPriority.HIGH);
+        org.junit.jupiter.api.Assertions.assertTrue(taskExists, "Task should have been created in database");
+    }
+
+    @Test
     @DisplayName("Should prevent user B from analyzing user A's task")
     void shouldEnforceIsolationInAiEndpoints() throws Exception {
         mockMvc.perform(post("/ai/tasks/" + taskA.getId() + "/analyze")
