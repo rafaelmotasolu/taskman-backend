@@ -55,7 +55,7 @@ public class TaskController {
     @PostMapping("/{id}/subtasks")
     @Operation(summary = "Criar subtarefa vinculada a uma tarefa pai existente")
     public ResponseEntity<TaskResponseDTO> createSubtask(
-            @PathVariable UUID id,
+            @PathVariable("id") UUID id,
             @Valid @RequestBody TaskCreateDTO dto,
             @AuthenticationPrincipal User currentUser
     ) {
@@ -66,9 +66,9 @@ public class TaskController {
     @GetMapping
     @Operation(summary = "Listar tarefas do usuário com filtros e paginação")
     public ResponseEntity<Page<TaskSummaryDTO>> listTasks(
-            @RequestParam(required = false) TaskStatus status,
-            @RequestParam(required = false) TaskPriority priority,
-            @RequestParam(required = false) Boolean rootOnly,
+            @RequestParam(name = "status", required = false) TaskStatus status,
+            @RequestParam(name = "priority", required = false) TaskPriority priority,
+            @RequestParam(name = "rootOnly", required = false) Boolean rootOnly,
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
             @AuthenticationPrincipal User currentUser
     ) {
@@ -79,7 +79,7 @@ public class TaskController {
     @GetMapping("/{id}")
     @Operation(summary = "Obter detalhes de uma tarefa por ID")
     public ResponseEntity<TaskResponseDTO> getTaskById(
-            @PathVariable UUID id,
+            @PathVariable("id") UUID id,
             @AuthenticationPrincipal User currentUser
     ) {
         TaskResponseDTO task = taskService.getTaskById(id, currentUser);
@@ -89,7 +89,7 @@ public class TaskController {
     @PutMapping("/{id}")
     @Operation(summary = "Atualizar dados cadastrais da tarefa")
     public ResponseEntity<TaskResponseDTO> updateTask(
-            @PathVariable UUID id,
+            @PathVariable("id") UUID id,
             @Valid @RequestBody TaskUpdateDTO dto,
             @AuthenticationPrincipal User currentUser
     ) {
@@ -100,7 +100,7 @@ public class TaskController {
     @PatchMapping("/{id}/status")
     @Operation(summary = "Atualizar apenas o status da tarefa")
     public ResponseEntity<TaskResponseDTO> updateTaskStatus(
-            @PathVariable UUID id,
+            @PathVariable("id") UUID id,
             @Valid @RequestBody TaskStatusUpdateDTO dto,
             @AuthenticationPrincipal User currentUser
     ) {
@@ -111,7 +111,7 @@ public class TaskController {
     @DeleteMapping("/{id}")
     @Operation(summary = "Excluir tarefa e suas etapas em cascata")
     public ResponseEntity<Void> deleteTask(
-            @PathVariable UUID id,
+            @PathVariable("id") UUID id,
             @AuthenticationPrincipal User currentUser
     ) {
         taskService.deleteTask(id, currentUser);
@@ -127,4 +127,3 @@ public class TaskController {
         return ResponseEntity.ok(dashboard);
     }
 }
-

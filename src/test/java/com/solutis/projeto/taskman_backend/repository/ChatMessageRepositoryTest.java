@@ -43,7 +43,7 @@ class ChatMessageRepositoryTest {
     void shouldSaveAndRetrieveOrderedMessages() throws InterruptedException {
         String sessionId = "session-" + UUID.randomUUID();
 
-        ChatMessage msg1 = chatMessageRepository.save(ChatMessage.builder()
+        chatMessageRepository.save(ChatMessage.builder()
                 .sessionId(sessionId)
                 .role(MessageRole.USER)
                 .content("Como posso priorizar minhas tarefas de hoje?")
@@ -52,7 +52,7 @@ class ChatMessageRepositoryTest {
 
         Thread.sleep(10);
 
-        ChatMessage msg2 = chatMessageRepository.save(ChatMessage.builder()
+        chatMessageRepository.save(ChatMessage.builder()
                 .sessionId(sessionId)
                 .role(MessageRole.ASSISTANT)
                 .content("Sugiro começar pelas tarefas com prioridade HIGH e prazo mais próximo.")

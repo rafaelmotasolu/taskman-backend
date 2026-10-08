@@ -48,7 +48,7 @@ public class AiTaskController {
     @PostMapping("/tasks/{id}/analyze")
     @Operation(summary = "Analisar complexidade, prioridade e esforço de uma tarefa existente")
     public ResponseEntity<TaskAnalysisResponseDTO> analyzeTask(
-            @PathVariable UUID id,
+            @PathVariable("id") UUID id,
             @AuthenticationPrincipal User currentUser
     ) {
         TaskAnalysisResponseDTO response = aiService.analyzeTask(id, currentUser);
@@ -58,7 +58,7 @@ public class AiTaskController {
     @PostMapping("/tasks/{id}/decompose")
     @Operation(summary = "Decompor tarefa existente em lista de subtarefas")
     public ResponseEntity<TaskDecompositionResponseDTO> decomposeTask(
-            @PathVariable UUID id,
+            @PathVariable("id") UUID id,
             @AuthenticationPrincipal User currentUser
     ) {
         TaskDecompositionResponseDTO response = aiService.decomposeTask(id, currentUser);
@@ -68,7 +68,7 @@ public class AiTaskController {
     @PostMapping("/tasks/{id}/apply-subtasks")
     @Operation(summary = "Decompor tarefa e persistir as subtarefas geradas diretamente no banco")
     public ResponseEntity<List<TaskResponseDTO>> applySubtasks(
-            @PathVariable UUID id,
+            @PathVariable("id") UUID id,
             @AuthenticationPrincipal User currentUser
     ) {
         List<TaskResponseDTO> createdSubtasks = aiService.applySubtasks(id, currentUser);
@@ -78,8 +78,8 @@ public class AiTaskController {
     @PostMapping("/tasks/{id}/decompose/apply")
     @Operation(summary = "Persistir no banco as subtarefas sugeridas pela IA que foram aprovadas pelo usuário")
     public ResponseEntity<List<TaskResponseDTO>> applyApprovedSubtasks(
-            @PathVariable UUID id,
-            @RequestBody List<SubtaskItemDTO> approvedSubtasks,
+            @PathVariable("id") UUID id,
+            @Valid @RequestBody List<SubtaskItemDTO> approvedSubtasks,
             @AuthenticationPrincipal User currentUser
     ) {
         List<TaskResponseDTO> createdSubtasks = aiService.applyApprovedSubtasks(id, approvedSubtasks, currentUser);
@@ -99,7 +99,7 @@ public class AiTaskController {
     @GetMapping("/chat/{sessionId}/history")
     @Operation(summary = "Recuperar histórico de mensagens de uma sessão de chat")
     public ResponseEntity<List<ChatMessage>> getChatHistory(
-            @PathVariable UUID sessionId,
+            @PathVariable("sessionId") UUID sessionId,
             @AuthenticationPrincipal User currentUser
     ) {
         List<ChatMessage> history = aiService.getChatHistory(sessionId, currentUser);

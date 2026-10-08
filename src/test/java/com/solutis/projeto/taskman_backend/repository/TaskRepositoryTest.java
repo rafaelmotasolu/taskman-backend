@@ -79,12 +79,12 @@ class TaskRepositoryTest {
 
         // Fetch root tasks only
         List<Task> rootTasks = taskRepository.findByUserIdAndParentTaskIsNull(testUser.getId());
-        assertThat(rootTasks).extracting(Task::getTitle).contains("Root Project Task");
+        assertThat(rootTasks).extracting(t -> t.getTitle()).contains("Root Project Task");
 
         // Fetch subtasks by parent id
         List<Task> subtasks = taskRepository.findByUserIdAndParentTaskId(testUser.getId(), savedRoot.getId());
         assertThat(subtasks).hasSize(2)
-                .extracting(Task::getTitle)
+                .extracting(t -> t.getTitle())
                 .containsExactlyInAnyOrder("Subtask 1 - Setup", "Subtask 2 - Implementation");
     }
 
@@ -120,13 +120,13 @@ class TaskRepositoryTest {
 
         // Query pending tasks (status != DONE)
         List<Task> pendingTasks = taskRepository.findByUserIdAndStatusNot(testUser.getId(), TaskStatus.DONE);
-        assertThat(pendingTasks).extracting(Task::getId)
+        assertThat(pendingTasks).extracting(t -> t.getId())
                 .contains(futurePending.getId(), overdueTask.getId())
                 .doesNotContain(completedPastTask.getId());
 
         // Query overdue tasks
         List<Task> overdueList = taskRepository.findOverdueTasks(testUser.getId(), LocalDateTime.now(), TaskStatus.DONE);
-        assertThat(overdueList).extracting(Task::getId)
+        assertThat(overdueList).extracting(t -> t.getId())
                 .contains(overdueTask.getId())
                 .doesNotContain(futurePending.getId(), completedPastTask.getId());
     }
