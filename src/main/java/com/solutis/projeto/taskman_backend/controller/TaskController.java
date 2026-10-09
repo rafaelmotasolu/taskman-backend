@@ -118,6 +118,17 @@ public class TaskController {
         return ResponseEntity.noContent().build();
     }
 
+    @DeleteMapping("/{parentId}/subtasks/{subtaskId}")
+    @Operation(summary = "Excluir uma subtarefa de uma tarefa")
+    public ResponseEntity<Void> deleteSubtask(
+            @PathVariable("parentId") UUID parentId,
+            @PathVariable("subtaskId") UUID subtaskId,
+            @AuthenticationPrincipal User currentUser
+    ) {
+        taskService.deleteSubtask(parentId, subtaskId, currentUser);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/dashboard")
     @Operation(summary = "Obter métricas e estatísticas das tarefas do usuário")
     public ResponseEntity<TaskDashboardDTO> getDashboard(

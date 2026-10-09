@@ -318,5 +318,44 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.status").value("DONE"))
                 .andExpect(jsonPath("$.subtasks[0].status").value("DONE"));
     }
+
+    @Test
+    @DisplayName("Should allow deleting a subtask and remove it from parent task")
+    void shouldAllowDeletingSubtask() throws Exception {
+        TaskCreateDTO createRoot = new TaskCreateDTO("Root Task for Subtask Deletion", "Desc", TaskPriority.MEDIUM, null);
+        MvcResult rootResult = mockMvc.perform(post("/tasks")
+                        .header("Authorization", "Bearer " + tokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createRoot)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String rootId = objectMapper.readTree(rootResult.getResponse().getContentAsString()).get("id").asText();
+
+        TaskCreateDTO createSub = new TaskCreateDTO("Subtask to Delete", "Desc", TaskPriority.LOW, null);
+        MvcResult subResult = mockMvc.perform(post("/tasks/" + rootId + "/subtasks")
+                        .header("Authorization", "Bearer " + tokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createSub)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String subId = objectMapper.readTree(subResult.getResponse().getContentAsString()).get("id").asText();
+
+        // Verify subtask is present
+        mockMvc.perform(get("/tasks/" + rootId)
+                        .header("Authorization", "Bearer " + tokenA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.subtasks.length()").value(1));
+
+        // Delete the subtask
+        mockMvc.perform(delete("/tasks/" + rootId + "/subtasks/" + subId)
+                        .header("Authorization", "Bearer " + tokenA))
+                .andExpect(status().isNoContent());
+
+        // Verify subtask is gone from parent
+        mockMvc.perform(get("/tasks/" + rootId)
+                        .header("Authorization", "Bearer " + tokenA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.subtasks.length()").value(0));
+    }
 }
 

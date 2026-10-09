@@ -164,7 +164,26 @@ public class TaskService {
         Task task = taskRepository.findByIdAndUserId(id, currentUser.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Tarefa não encontrada com o ID: " + id));
 
+        if (task.getParentTask() != null) {
+            task.getParentTask().removeSubtask(task);
+        }
         taskRepository.delete(task);
+    }
+
+    @Transactional
+    public void deleteSubtask(UUID parentId, UUID subtaskId, User currentUser) {
+        Task parent = taskRepository.findByIdAndUserId(parentId, currentUser.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Tarefa principal não encontrada com o ID: " + parentId));
+
+        Task subtask = taskRepository.findByIdAndUserId(subtaskId, currentUser.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Subtarefa não encontrada com o ID: " + subtaskId));
+
+        if (subtask.getParentTask() == null || !subtask.getParentTask().getId().equals(parent.getId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A subtarefa não pertence à tarefa informada.");
+        }
+
+        parent.removeSubtask(subtask);
+        taskRepository.delete(subtask);
     }
 
     @Transactional(readOnly = true)
